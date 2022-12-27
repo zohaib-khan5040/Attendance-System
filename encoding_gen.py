@@ -2,6 +2,13 @@ import os
 import cv2
 import face_recognition
 import pickle
+from pymongo import MongoClient
+from config import conn
+from utils import str_to_arr, arr_to_str
+
+# Set up the collections
+db_faces = conn.AttendanceDemo.FacesDatabase
+db_logs = conn.AttendanceDemo.Logs
 
 
 def get_images_and_names(image_folder_path):
@@ -44,6 +51,25 @@ if __name__ == "__main__":
     print("Done!")
 
     print("Saving encodings...")
-    with open("encodings.pickle", "wb") as f:
-        pickle.dump([encodings, names], f)
-    print("Done!") 
+    count = 0
+    for encoding, name in zip(encodings, names):
+        
+        # Convert the encoding to a string
+        encoding_str = arr_to_str(encoding)
+
+        # Check if the name is already in the database
+        if db_faces.find_one({"name": name}):
+            # If it is, update the encoding
+            db_faces.update_one(
+                {"name": name}, 
+                {"$set": {"encoding": encoding_str}}
+            )
+        else:
+            # If it isn't, insert the name and encoding
+            db_faces.insert_one(
+                {"name": name, "encoding": encoding_str}
+            )
+        
+        count += 1
+    
+    print(f"Finished: saved {count} encodings!")

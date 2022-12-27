@@ -12,50 +12,64 @@ cap.set(4, 480)
 # Load encodings
 print("Loading encodings...")
 with open("encodings.pickle", "rb") as f:
-    encodings, names = pickle.load(f)
+    known_encodings, known_names = pickle.load(f)
 print("Loaded!")
 
-
+process_this_frame = True # A toggle for processing frames
 
 while True:
     success, img = cap.read()
 
-    # Take a scaled down version of the image to find the encodings
-    small_img = cv2.resize(img, (0,0), None, 0.25, 0.25)
-    small_img = cv2.cvtColor(small_img, cv2.COLOR_BGR2RGB)
+    # Process every other frame to save time
+    if process_this_frame:
 
-    # Find the encodings in the small image
-    face_locations = face_recognition.face_locations(small_img)
-    face_encodings = face_recognition.face_encodings(small_img, face_locations)
+        # Resize frame and convert to RGB
+        small_frame = cv2.resize(img, (0, 0), fx=0.25, fy=0.25)
+        rgb_small_frame = small_frame[:, :, ::-1]
 
+        # Find all the faces and face encodings in the current frame of video
+        face_locations = face_recognition.face_locations(rgb_small_frame)
+        face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
 
-    # Loop through encodings and compare with the ones we have
-    for face_encoding, face_location in zip(face_encodings, face_locations):
-        
-        # Get the matches and the distances
-        matches = face_recognition.compare_faces(encodings, face_encoding)
-        face_distances = face_recognition.face_distance(encodings, face_encoding)
+        face_names = []
+        for face_encoding in face_encodings:
+            # Check if the face is a match for known faces
+            matches = face_recognition.compare_faces(known_encodings, face_encoding)
+            name = "Unknown"
 
-        # Find the index of the smallest distance
-        best_match_idx = np.argmin(face_distances)
+            # Use the face with the smallest distance to the new face
+            face_distances = face_recognition.face_distance(known_encodings, face_encoding)
+            best_match_index = np.argmin(face_distances)
+            # And check if the match value is True
+            if matches[best_match_index]:
+                name = known_names[best_match_index]
 
-        # Check if the corresponding match value is True (meaning it's a match)
-        if matches[best_match_idx]:
-            name = names[best_match_idx]
-            print(f"Match found: {name}")
+            face_names.append(name)
 
-            # Parse the face locations logic and scale the values
-            y1, x2, y2, x1 = face_location
-            x1, y1 = x1*4, y1*4
-            x2, y2 = x2*4, y2*4
+    # Toggle the value to skip a frame
+    process_this_frame = not process_this_frame
 
-            # Generate the bbox variable
-            bbox = [x1, y1, x2-x1, y2-y1]
+    # Display the results
+    for (top, right, bottom, left), name in zip(face_locations, face_names):
+        # Scale back up face locations since the frame we detected in was scaled to 1/4 size
+        top *= 4
+        right *= 4
+        bottom *= 4
+        left *= 4
 
-            # Draw the bbox for matching faces
-            cvzone.cornerRect(img, bbox, rt=0)
+        # Draw a box around the face
+        cv2.rectangle(img, (left, top), (right, bottom), (0, 0, 255), 2)
 
-
+        # Draw a label with a name below the face
+        cv2.rectangle(img, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
+        font = cv2.FONT_HERSHEY_DUPLEX
+        cv2.putText(img, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
 
     cv2.imshow("Face Attendance", img)
-    cv2.waitKey(1) 
+    
+    # Press q to quit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
